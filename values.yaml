@@ -1,0 +1,35 @@
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+global:
+  aws:
+    region: "us-east-1"
+  env: dev
+
+enabled: true
+scaleUpCronUtc: "30 1 * * 1"         # Monday 01:30 UTC (7 AM IST)
+scaleDownCronUtc: "0 6 * * 6"        # Saturday 06:00 UTC (8 AM CET)
+scaleDownReplicas: 0
+
+deployments:
+  - name: ddi2-composer
+    replicaCount: 1
+  # - name: ddi2-extraction 
+  #   replicaCount: 1
+  # - name: ddi2-graph-renderer
+  #   replicaCount: 1
+  # - name: ddi2-ui
+  #   replicaCount: 1
+  # - name: pp-api
+  #   replicaCount: 1
+  # - name: pp-queriesservice
+  #   replicaCount: 1
+  # - name: pp-webapp
+  #   replicaCount: 1
+  # - name: reg-ai-api
+  #   replicaCount: 1
+  # - name: safety-margin-api
+  #   replicaCount: 1
+  - name: security-gateway
+    replicaCount: 1

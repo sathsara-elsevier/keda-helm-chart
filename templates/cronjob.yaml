@@ -1,0 +1,116 @@
+{{- if .Values.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: keda-downscale-cron
+spec:
+  schedule: {{ .Values.scaleDownCronUtc | quote }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: keda-scaler
+          containers:
+          - name: slack-notifier
+            image: alpine:latest
+            command:
+              - /bin/sh
+              - -c
+              - |
+                apk add --no-cache curl && \
+                echo "Environment {{ .Values.global.env }} was scaled down to {{ .Values.scaleDownReplicas }} replicas." && \
+                curl -X POST -H 'Content-type: application/json' \
+                  --data '{"text":"✅ Environment {{ .Values.global.env }} was scaled down to {{ .Values.scaleDownReplicas }} replicas."}' \
+                  "$SLACK_WEBHOOK_URL"
+            env:
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: keda-slack-notifications
+                  key: SLACK_WEBHOOK_URL
+          restartPolicy: OnFailure
+
+---
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: keda-upscale-cron
+spec:
+  schedule: {{ .Values.scaleUpCronUtc | quote }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: keda-scaler
+          containers:
+          - name: deployment-verifier
+            image: alpine/k8s:1.28.0
+            command:
+              - /bin/sh
+              - -c
+              - |
+                echo "Verifying all deployments in {{ .Values.global.env }} are up and running..."
+                
+                # Track overall health
+                all_healthy=true
+                total_deployments={{ len .Values.deployments }}
+                healthy_deployments=0
+                
+                {{- range .Values.deployments }}
+                echo "Checking deployment: {{ .name }}"
+                
+                # Wait for deployment to be available
+                if kubectl wait --for=condition=available deployment/{{ .name }} --timeout=600s; then
+                  # Get current replica counts
+                  EXPECTED_REPLICAS={{ .replicaCount }}
+                  READY_REPLICAS=$(kubectl get deployment {{ .name }} -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+                  TOTAL_REPLICAS=$(kubectl get deployment {{ .name }} -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+                  
+                  echo "{{ .name }}: Expected=$EXPECTED_REPLICAS, Ready=$READY_REPLICAS, Total=$TOTAL_REPLICAS"
+                  
+                  # Verify replica count matches expected
+                  if [ "$READY_REPLICAS" = "$EXPECTED_REPLICAS" ] && [ "$TOTAL_REPLICAS" = "$EXPECTED_REPLICAS" ]; then
+                    echo "✅ {{ .name }}: All $READY_REPLICAS replicas are ready"
+                    healthy_deployments=$((healthy_deployments + 1))
+                  else
+                    echo "❌ {{ .name }}: Expected $EXPECTED_REPLICAS replicas, but only $READY_REPLICAS are ready (Total: $TOTAL_REPLICAS)"
+                    all_healthy=false
+                    # Send individual failure notification
+                    curl -X POST -H 'Content-type: application/json' \
+                      --data "{\"text\":\"❌ Deployment {{ .name }} in {{ $.Values.env }} verification failed. Expected: $EXPECTED_REPLICAS replicas, but only $READY_REPLICAS are ready.\"}" \
+                      "$SLACK_WEBHOOK_URL"
+                  fi
+                else
+                  echo "❌ {{ .name }}: Deployment failed to become available within timeout"
+                  all_healthy=false
+                  # Send timeout failure notification
+                  curl -X POST -H 'Content-type: application/json' \
+                    --data "{\"text\":\"❌ Deployment {{ .name }} in {{ $.Values.env }} failed to become available within 5 minutes timeout.\"}" \
+                    "$SLACK_WEBHOOK_URL"
+                fi
+                echo "---"
+                {{- end }}
+                
+                # Send overall status notification
+                if [ "$all_healthy" = "true" ]; then
+                  echo "🎉 All $total_deployments deployments are healthy!"
+                  curl -X POST -H 'Content-type: application/json' \
+                    --data "{\"text\":\"✅ All $total_deployments deployments in {{ .Values.global.env }} are scaled up and running successfully! 🚀\n\nHealthy deployments:\n{{- range .Values.deployments }}\n• {{ .name }} ({{ .replicaCount }} replicas){{- end }}\"}" \
+                    "$SLACK_WEBHOOK_URL"
+                  exit 0
+                else
+                  echo "💥 $healthy_deployments/$total_deployments deployments are healthy"
+                  curl -X POST -H 'Content-type: application/json' \
+                    --data "{\"text\":\"⚠️ Upscale verification completed for {{ .Values.global.env }}: $healthy_deployments/$total_deployments deployments are healthy. Check individual deployment notifications for details.\"}" \
+                    "$SLACK_WEBHOOK_URL"
+                  exit 1
+                fi
+            env:
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: keda-slack-notifications
+                  key: SLACK_WEBHOOK_URL
+          restartPolicy: OnFailure
+{{- end }}

@@ -1,0 +1,21 @@
+{{- if .Values.enabled }}
+{{- range .Values.deployments }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .name }}
+spec:
+  scaleTargetRef:
+    name: {{ .name }}
+  minReplicaCount: {{ $.Values.scaleDownReplicas }}
+  cooldownPeriod: 300
+  triggers:
+  - type: cron
+    metadata:
+      timezone: Etc/UTC
+      start: {{ $.Values.scaleUpCronUtc }}
+      end: {{ $.Values.scaleDownCronUtc }}
+      desiredReplicas: "{{ .replicaCount }}"
+{{- end }}
+{{- end }}
