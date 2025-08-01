@@ -28,6 +28,17 @@ spec:
                 secretKeyRef:
                   name: keda-slack-notifications
                   key: SLACK_WEBHOOK_URL
+            volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/var/run/secrets/secrets-store"
+              readOnly: true
+          volumes:
+          - name: secrets-store-inline
+            csi:
+              driver: secrets-store.csi.k8s.io
+              readOnly: true
+              volumeAttributes:
+                secretProviderClass: keda-scaler
           restartPolicy: OnFailure
 
 ---
@@ -112,5 +123,16 @@ spec:
                 secretKeyRef:
                   name: keda-slack-notifications
                   key: SLACK_WEBHOOK_URL
+            volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/var/run/secrets/secrets-store"
+              readOnly: true
+          volumes:
+          - name: secrets-store-inline
+            csi:
+              driver: secrets-store.csi.k8s.io
+              readOnly: true
+              volumeAttributes:
+                secretProviderClass: keda-scaler
           restartPolicy: OnFailure
 {{- end }}
