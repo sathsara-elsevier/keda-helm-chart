@@ -3,6 +3,12 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: keda-downscale-cron
+  labels: 
+    app.kubernetes.io/name: {{ include "helm.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: cronjob
+    app.kubernetes.io/part-of: keda-scaling
 spec:
   schedule: {{ .Values.scaleDownCronUtc | quote }}
   jobTemplate:
@@ -47,6 +53,13 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: keda-upscale-cron
+  labels: 
+    app.kubernetes.io/name: {{ include "helm.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    app.kubernetes.io/component: cronjob
+    helm.sh/chart: {{ include "helm.chart" . }}
 spec:
   schedule: {{ .Values.scaleUpCronUtc | quote }}
   jobTemplate:
